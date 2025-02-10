@@ -1,0 +1,71 @@
+1.	Найдите клиентов из города Казань, у которых кол-во договоров больше 3. 
+SELECT c.client_id
+FROM client c
+JOIN agress a
+  ON c.client_id = a.client_id
+WHERE city = 'Kazan'
+GROUP BY c.client_id HAVING COUNT(agree_id) > 3;
+
+2.	Выведите дублирующиеся номера телефонов и укажите по ним количество клиентов.
+SELECT tel_num , COUNT(client_id) AS 'количество клиентов'
+FROM client 
+GROUP BY tel_num HAVING COUNT(tel_num) > 1;
+
+3.	Выведите сгруппированные по месяцу и году открытия договора данные по суммарному и медианному объему продаж.
+SELECT 
+    YEAR(ag.open_date) AS year_open,
+    MONTH(ag.open_date) AS month_open,
+    COUNT(ag.agree_id) AS count_agree,
+    SUM(ag.amount_rub) AS total_amount,
+    (
+    SELECT SUM(dd.amount_rub) as median_val
+  FROM (
+    SELECT agress.amount_rub, 
+    @rownum:=@rownum+1 as row_number, 
+    @total_rows:=@rownum
+    FROM agress, (SELECT @rownum:=0) r
+    WHERE agress.amount_rub is NOT NULL
+    ORDER BY agress.amount_rub
+  ) as dd WHERE dd.row_number IN ( FLOOR((@total_rows+1)/2), FLOOR((@total_rows+2)/2) )
+    ) AS median_amount
+FROM 
+    agress AS ag
+GROUP BY 
+    YEAR(ag.open_date),
+    MONTH(ag.open_date)
+ORDER BY 
+    year_open, 
+    month_open;
+
+4.	Выведите долю активности в разрезе пенсионеры/прочие клиенты.
+SELECT 
+    CASE 
+        WHEN age >= 60 THEN 'Пенсионеры'
+        ELSE 'Прочие'
+    END AS client_category,
+    COUNT(*) AS total_clients,
+    SUM(act_flag) AS active_clients,
+    SUM(act_flag) / COUNT(*) AS activity_ratio
+FROM client c
+LEFT JOIN active a 
+  ON c.client_id = a.client_id
+GROUP BY client_category;
+
+5.	Выведите по каждому продукту топ 5 городов по кол-ву уникальных клиентов.
+SELECT prod_name, city, unique_clients
+FROM (
+    SELECT 
+        a.prod_name,
+        c.city,
+        COUNT(DISTINCT c.client_id) AS unique_clients,
+        @ranking := IF(@current_prod = a.prod_name, @rank + 1, 1) AS ranking,
+        @current_prod := a.prod_name
+    FROM agress a
+    JOIN client c 
+    ON a.client_id = c.client_id
+    CROSS JOIN (SELECT @ranking := 0, @current_prod := '') AS vars
+    GROUP BY a.prod_name, c.city
+    ORDER BY a.prod_name, unique_clients DESC
+) AS ranked
+WHERE ranking <= 5
+ORDER BY prod_name, unique_clients DESC;
